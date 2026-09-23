@@ -41,8 +41,7 @@
   }
   @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ } }
   *{box-sizing:border-box;}
-  html{scroll-padding-top: env(safe-area-inset-top, 0px);}
-  html,body{height:100%;}
+  html{scroll-padding-top: env(safe-area-inset-top, 0px); min-height:100%;}
   body{
     margin:0;
     background: radial-gradient(circle at 20% -10%, #223b32 0%, var(--ink) 45%, #0f1a15 100%);
@@ -246,6 +245,9 @@
   }
 
   .section-title{ font-size:.78rem; text-transform:uppercase; letter-spacing:.08em; color: rgba(241,233,216,.5); margin-bottom:10px; }
+  .rules-list{ margin:0; padding-left:22px; color:rgba(241,233,216,.8); font-size:.88rem; line-height:1.7; }
+  .rules-list li{ margin-bottom:4px; }
+  .rules-list li::marker{ color:var(--brass); font-weight:700; }
 
   .empty{ text-align:center; padding: 30px 10px; color: rgba(241,233,216,.5); font-size:.9rem; }
 
@@ -355,6 +357,8 @@
     hostCodeInput: '',
     hostResumeInput: '',
     guessInput: '',
+    showRulesModal: false,
+    rulesAcknowledged: false,
     now: Date.now()
   };
 
@@ -377,7 +381,7 @@
     var neg = n < 0;
     n = Math.abs(n);
     var s = n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    return (neg?'-':'') + '$' + s;
+    return (neg?'-':'') + 'USD ' + s;
   }
   function fmtCredits(n){
     n = Math.round(n);
@@ -615,11 +619,13 @@
     if(state.role === 'host'){
       root.appendChild(renderHostRoot());
       maybeStartTimerLoop();
+      if(state.showRulesModal){ root.appendChild(renderRulesModal()); }
       return;
     }
     if(state.role === 'player'){
       root.appendChild(renderPlayerRoot());
       maybeStartTimerLoop();
+      if(state.showRulesModal){ root.appendChild(renderRulesModal()); }
       return;
     }
   }
@@ -686,8 +692,54 @@
     ]);
   }
 
+  // ----- HOW IT PLAYS -----
+  var RULES_ITEMS = [
+    'Every team starts with 10,000 credits.',
+    'Each round, a vintage product appears with an AI-appraised price. You have 60 seconds to submit your guess.',
+    'Closest guess to the AI\u2019s price wins +2,500 credits.',
+    'Every other guess loses credits based on how far off it was \u2014 the bigger the miss, the steeper the loss.',
+    'You can Pass instead of guessing \u2014 no gain, no loss \u2014 but each team only gets ' + MAX_PASSES + ' passes for the whole game.',
+    TOTAL_MAIN_ROUNDS + ' rounds total. If there\u2019s a tie for the lead at the end, up to 2 tiebreaker rounds are played.',
+    'The team with the most credits when it\u2019s all over is crowned the one that beat the AI!'
+  ];
+
+  function renderRulesCard(){
+    return el('div', {class:'card', style:'margin-top:16px;text-align:left;'}, [
+      el('div', {class:'section-title'}, ['How it plays']),
+      el('ol', {class:'rules-list'},
+        RULES_ITEMS.map(function(txt){ return el('li', {}, [txt]); })
+      )
+    ]);
+  }
+
+  function renderRulesModal(){
+    return el('div', {
+      style:'position:fixed;inset:0;background:rgba(10,15,12,.75);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px;',
+      onclick:function(e){ if(e.target === e.currentTarget){ state.showRulesModal = false; render(); } }
+    }, [
+      el('div', {style:'max-width:440px;width:100%;max-height:85vh;overflow-y:auto;'}, [
+        el('div', {class:'card'}, [
+          el('div', {style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;'}, [
+            el('h2', {style:'font-size:1.15rem;'}, ['How it plays']),
+            el('button', {class:'btn secondary small', onclick:function(){ state.showRulesModal = false; render(); }}, ['Close'])
+          ]),
+          el('ol', {class:'rules-list', style:'margin-top:10px;'},
+            RULES_ITEMS.map(function(txt){ return el('li', {}, [txt]); })
+          )
+        ])
+      ])
+    ]);
+  }
+
+  function rulesToggleButton(){
+    return el('button', {class:'btn secondary small', onclick:function(){ state.showRulesModal = true; render(); }}, ['\uD83D\uDCCB Rules']);
+  }
+
   // ----- HOME -----
   function renderHome(){
+    if(!state.rulesAcknowledged){
+      return renderRulesGate();
+    }
     return el('div', {class:'center-wrap'}, [
       el('div', {class:'shell'}, [
         brandMark(),
@@ -705,7 +757,25 @@
               el('h3', {}, ['Player']),
               el('p', {}, ['Join your team and place guesses'])
             ])
+          ]),
+          el('div', {style:'text-align:center;margin-top:18px;'}, [
+            el('button', {class:'link-btn', onclick:function(){ state.rulesAcknowledged = false; render(); }}, ['\u2190 back to rules'])
           ])
+        ])
+      ])
+    ]);
+  }
+
+  function renderRulesGate(){
+    return el('div', {class:'center-wrap'}, [
+      el('div', {class:'shell'}, [
+        brandMark(),
+        el('div', {class:'card'}, [
+          el('div', {class:'section-title', style:'text-align:center;'}, ['How it plays']),
+          el('ol', {class:'rules-list'},
+            RULES_ITEMS.map(function(txt){ return el('li', {}, [txt]); })
+          ),
+          el('button', {class:'btn wide', style:'margin-top:22px;', onclick:function(){ state.rulesAcknowledged = true; render(); }}, ['I\u2019ve read the rules \u2014 Start'])
         ])
       ])
     ]);
@@ -857,6 +927,7 @@
       ]),
       el('div', {style:'display:flex;align-items:center;gap:10px;'}, [
         el('span', {class:'round-pill'}, [label]),
+        rulesToggleButton(),
         el('button', {class:'btn secondary small', onclick:function(){ handleExitHost(); }}, ['Exit'])
       ])
     ]);
@@ -891,16 +962,19 @@
   }
 
   function renderHostLobby(game){
-    return el('div', {class:'card'}, [
-      el('div', {class:'code-plate', style:'margin-bottom:22px;'}, [
-        el('div', {class:'sub'}, ['SHARE THIS CODE WITH PLAYERS']),
-        el('div', {class:'code'}, [game.code])
+    return el('div', {}, [
+      el('div', {class:'card'}, [
+        el('div', {class:'code-plate', style:'margin-bottom:22px;'}, [
+          el('div', {class:'sub'}, ['SHARE THIS CODE WITH PLAYERS']),
+          el('div', {class:'code'}, [game.code])
+        ]),
+        el('h2', {style:'font-size:1.2rem;margin-bottom:8px;'}, ['Waiting to begin']),
+        el('p', {style:'color:rgba(241,233,216,.65);font-size:.9rem;line-height:1.5;margin-bottom:20px;'}, [
+          state.teams.length + ' team' + (state.teams.length===1?'':'s') + ' enrolled at this location. Start Round 1 whenever everyone\u2019s ready \u2014 teams can still join between rounds.'
+        ]),
+        el('button', {class:'btn wide', disabled: state.teams.length===0, onclick:function(){ hostStartRound(0); }}, ['Start Round 1'])
       ]),
-      el('h2', {style:'font-size:1.2rem;margin-bottom:8px;'}, ['Waiting to begin']),
-      el('p', {style:'color:rgba(241,233,216,.65);font-size:.9rem;line-height:1.5;margin-bottom:20px;'}, [
-        state.teams.length + ' team' + (state.teams.length===1?'':'s') + ' enrolled at this location. Start Round 1 whenever everyone\u2019s ready \u2014 teams can still join between rounds.'
-      ]),
-      el('button', {class:'btn wide', disabled: state.teams.length===0, onclick:function(){ hostStartRound(0); }}, ['Start Round 1'])
+      renderRulesCard()
     ]);
   }
 
@@ -988,11 +1062,7 @@
           el('th', {}, ['Credits'])
         ])
       ].concat(rows.map(function(r){
-        var teamObj = state.teams.find(function(t){ return t.id === r.id; });
         var nameCell = el('td', {}, [(r.isWinner ? '\uD83C\uDFC6 ' : '') + r.name]);
-        if(teamObj && teamObj.members && teamObj.members.length){
-          nameCell.appendChild(el('div', {class:'members-line'}, [teamObj.members.join(', ')]));
-        }
         return el('tr', {class: r.isWinner ? 'winner' : ''}, [
           nameCell,
           el('td', {class:'num'}, [r.passed ? 'Passed' : (r.guess===null ? 'No answer' : fmtMoney(r.guess))]),
@@ -1009,17 +1079,11 @@
     return el('div', {class:'card'}, [
       el('div', {class:'kicker-crown'}, ['\uD83C\uDFC6']),
       el('h2', {style:'text-align:center;font-size:1.3rem;margin-bottom:6px;'}, [winners.length>1 ? 'It\u2019s a tie!' : 'We have a winner']),
-      el('p', {style:'text-align:center;color:var(--brass-bright);font-family:Fraunces,serif;font-size:1.4rem;margin-bottom:6px;'}, [winners.map(function(w){return w.name;}).join(' & ') || '\u2014']),
-      winners.length && winners.some(function(w){ return w.members && w.members.length; })
-        ? el('div', {style:'text-align:center;margin-bottom:18px;'}, winners.map(function(w){
-            return w.members && w.members.length
-              ? el('p', {style:'color:rgba(241,233,216,.7);font-size:.85rem;margin:2px 0;'}, [(winners.length>1 ? w.name + ': ' : '') + w.members.join(', ')])
-              : null;
-          }))
-        : el('div', {style:'margin-bottom:18px;'}),
-      el('div', {class:'team-list'}, state.teams.map(function(t, i){ return renderLeaderboardRow(t, i, game, false, true); })),
+      el('p', {style:'text-align:center;color:var(--brass-bright);font-family:Fraunces,serif;font-size:1.4rem;margin-bottom:18px;'}, [winners.map(function(w){return w.name;}).join(' & ') || '\u2014']),
+      el('div', {class:'team-list'}, state.teams.map(function(t, i){ return renderLeaderboardRow(t, i, game); })),
       el('button', {class:'btn wide', style:'margin-top:18px;', onclick:function(){ handleDownloadResults(game); }}, ['\u2B07\uFE0F Download results (Excel)']),
-      el('p', {style:'text-align:center;margin-top:20px;color:rgba(241,233,216,.5);font-size:.82rem;'}, ['Game complete. Thanks for playing against the AI.'])
+      el('p', {style:'text-align:center;margin-top:20px;color:rgba(241,233,216,.5);font-size:.82rem;'}, ['Game complete. Thanks for playing against the AI.']),
+      el('p', {style:'text-align:center;margin-top:4px;color:rgba(241,233,216,.4);font-size:.76rem;'}, ['Full team rosters are in the leaderboard panel \u2192'])
     ]);
   }
 
@@ -1245,6 +1309,7 @@
       el('div', {class:'loc'}, [teamNameBlock]),
       el('div', {style:'display:flex;align-items:center;gap:10px;'}, [
         el('span', {class:'round-pill'}, [idx<0 ? 'Lobby' : roundLabel(idx)]),
+        rulesToggleButton(),
         el('button', {class:'btn secondary small', onclick:function(){ handleExitPlayer(); }}, ['Leave'])
       ])
     ]));
@@ -1279,10 +1344,13 @@
 
   function renderPlayerLobby(game){
     var myRank = state.teams.findIndex(function(t){ return t.id===state.teamId; });
-    return el('div', {class:'card'}, [
-      el('h2', {style:'font-size:1.2rem;margin-bottom:6px;text-align:center;'}, ['You\u2019re in!']),
-      el('p', {style:'color:rgba(241,233,216,.65);font-size:.88rem;text-align:center;margin-bottom:20px;'}, ['Waiting for the host to start Round 1. Get ready to out-guess the AI.']),
-      el('div', {class:'team-list'}, state.teams.map(function(t,i){ return renderLeaderboardRow(t, i, game); }))
+    return el('div', {}, [
+      el('div', {class:'card'}, [
+        el('h2', {style:'font-size:1.2rem;margin-bottom:6px;text-align:center;'}, ['You\u2019re in!']),
+        el('p', {style:'color:rgba(241,233,216,.65);font-size:.88rem;text-align:center;margin-bottom:20px;'}, ['Waiting for the host to start Round 1. Get ready to out-guess the AI.']),
+        el('div', {class:'team-list'}, state.teams.map(function(t,i){ return renderLeaderboardRow(t, i, game); }))
+      ]),
+      renderRulesCard()
     ]);
   }
 
@@ -1310,7 +1378,7 @@
       var passesUsed = (myTeam && myTeam.passesUsed) || 0;
       var passesLeft = Math.max(0, MAX_PASSES - passesUsed);
       content.push(el('div', {class:'guess-row', style:'margin-bottom:12px;'}, [
-        el('span', {class:'prefix'}, ['$']),
+        el('span', {class:'prefix'}, ['USD']),
         el('input', {type:'number', inputmode:'numeric', placeholder:'Your guess', value:state.guessInput, oninput:function(e){ state.guessInput = e.target.value; }})
       ]));
       content.push(el('div', {style:'display:flex;gap:10px;'}, [
