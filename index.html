@@ -360,8 +360,39 @@
     guessInput: '',
     showRulesModal: false,
     rulesAcknowledged: false,
+    clockOffset: 0, // ms to add to this device's Date.now() to approximate Firestore server time
     now: Date.now()
   };
+
+  // ============================================================
+  // CLOCK SYNC — every device's round timer must agree, even if
+  // phones/laptops have slightly wrong local clocks (very common).
+  // We estimate this device's offset from Firestore's own server
+  // clock once at startup, then apply it whenever we compute how
+  // much time is left in a round, instead of trusting local time.
+  // ============================================================
+  function estimateClockOffset(){
+    if(!fsDB) return Promise.resolve();
+    var probeId = 'probe_' + Math.random().toString(36).slice(2, 10);
+    var probeRef = fsDB.doc('_clocksync/' + probeId);
+    var t0 = Date.now();
+    return probeRef.set({ t: firebase.firestore.FieldValue.serverTimestamp() }).then(function(){
+      return probeRef.get();
+    }).then(function(snap){
+      var t1 = Date.now();
+      var roundTrip = t1 - t0;
+      var serverMillis = snap.data().t.toMillis();
+      var estimatedServerNow = serverMillis + (roundTrip / 2); // assume symmetric latency
+      state.clockOffset = estimatedServerNow - t1;
+      probeRef.delete().catch(function(){});
+    }).catch(function(e){
+      console.error('Clock sync failed, defaulting to no offset', e);
+      state.clockOffset = 0;
+    });
+  }
+  function correctedNow(){
+    return Date.now() + state.clockOffset;
+  }
 
   function loadSession(){
     try{
@@ -645,7 +676,7 @@
     var autoCloseFired = false;
 
     function paintTimer(){
-      var remaining = totalMs - (Date.now() - startedAt);
+      var remaining = totalMs - (correctedNow() - startedAt);
       if(remaining <= 0){
         var circle0 = document.getElementById('timerProgressCircle');
         var numEl0 = document.getElementById('timerNumText');
@@ -1012,7 +1043,7 @@
 
   function renderHostActiveRound(game, idx, rd){
     var product = PRODUCTS[rd.productIndex];
-    var elapsed = state.now - rd.startedAt;
+    var elapsed = correctedNow() - rd.startedAt;
     var remaining = game.roundDurationMs - elapsed;
     var guesses = rd.guesses || {};
     var submittedCount = Object.keys(guesses).length;
@@ -1377,7 +1408,7 @@
 
   function renderPlayerActiveRound(game, idx, rd, myTeam){
     var product = PRODUCTS[rd.productIndex];
-    var elapsed = state.now - rd.startedAt;
+    var elapsed = correctedNow() - rd.startedAt;
     var remaining = game.roundDurationMs - elapsed;
     var myGuess = (rd.guesses||{})[state.teamId];
     var already = !!myGuess;
@@ -1518,7 +1549,9 @@
       auth.onAuthStateChanged(function(user){
         if(user){
           dbReady = true;
-          resumeSavedSession();
+          estimateClockOffset().then(function(){
+            resumeSavedSession();
+          });
         }
       });
       auth.signInAnonymously().catch(function(e){
