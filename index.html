@@ -21,7 +21,6 @@
 <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js"></script>
-<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
   :root{
     --ink:#16241F;
@@ -837,7 +836,7 @@
         createdAt: Date.now(),
         status: 'lobby',
         currentRoundIndex: -1,
-        productOrder: [0,1,2,3,4,5,6,7,8],
+        productOrder: [0,1,2,8,4,5,6,7,3], // Round 4 <-> tiebreaker swapped: celadon dish is now Round 4, pocket watch is now the tiebreaker
         totalMainRounds: TOTAL_MAIN_ROUNDS,
         roundDurationMs: ROUND_DURATION_MS,
         rounds: {},
@@ -1090,26 +1089,46 @@
   }
 
   function handleDownloadResults(game){
-    if(typeof XLSX === 'undefined'){
-      showToast('Export library did not load \u2014 check your internet connection and try again.');
-      return;
-    }
     var ranked = sortedTeamsFor(state.teams);
-    var rows = ranked.map(function(t, i){
-      return {
-        'Rank': i + 1,
-        'Team Name': t.name,
-        'Team Members': (t.members && t.members.length) ? t.members.join(', ') : '',
-        'Final Credits': t.credits,
-        'Winner': (game.winnerTeamIds||[]).indexOf(t.id) !== -1 ? 'Yes' : ''
-      };
+
+    function csvEscape(val){
+      var s = String(val === undefined || val === null ? '' : val);
+      if(/[",\n]/.test(s)){ s = '"' + s.replace(/"/g, '""') + '"'; }
+      return s;
+    }
+
+    var header = ['Rank', 'Team Name', 'Team Members', 'Final Credits', 'Winner'];
+    var lines = [header.map(csvEscape).join(',')];
+    ranked.forEach(function(t, i){
+      var row = [
+        i + 1,
+        t.name,
+        (t.members && t.members.length) ? t.members.join(', ') : '',
+        t.credits,
+        (game.winnerTeamIds||[]).indexOf(t.id) !== -1 ? 'Yes' : ''
+      ];
+      lines.push(row.map(csvEscape).join(','));
     });
-    var ws = XLSX.utils.json_to_sheet(rows);
-    ws['!cols'] = [{wch:6},{wch:24},{wch:40},{wch:14},{wch:8}];
-    var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Leaderboard');
+    // BOM so Excel opens special characters (e.g. team names) correctly
+    var csvContent = '\uFEFF' + lines.join('\r\n');
+
     var safeLocation = (game.locationName || 'game').replace(/[^a-z0-9]+/gi, '_');
-    XLSX.writeFile(wb, 'price_wars_results_' + safeLocation + '.xlsx');
+    var filename = 'price_wars_results_' + safeLocation + '.csv';
+
+    try{
+      var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    }catch(e){
+      console.error('Download failed', e);
+      showToast('Could not start the download. Try again, or take a screenshot of the leaderboard.');
+    }
   }
 
   function sortedTeamsFor(teams){
