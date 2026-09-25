@@ -1312,11 +1312,6 @@
     if(!name){ state.joinError = 'Give your team a name.'; render(); return; }
     var code = state.code;
     teamsCol(code).get().then(function(snap){
-      if(snap.docs.length >= 10){
-        state.joinError = 'This location already has 10 teams.';
-        render();
-        return;
-      }
       var nameTaken = snap.docs.some(function(d){ return (d.data().name||'').toLowerCase() === name.toLowerCase(); });
       if(nameTaken){
         state.joinError = 'That team name is taken here \u2014 try another.';
